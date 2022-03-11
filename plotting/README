@@ -1,0 +1,2 @@
+./makePlot.sh testInput hist.config
+./makePlot.sh trafficDeaths
