@@ -16,6 +16,11 @@ BEGIN {
 #
 !plotName {plotName = FILENAME}
 
+#
+# Get the dataset name
+#
+!(FILENAME in datasets) {print "adding datasetNow" FILENAME; datasets[FILENAME] = 1; currentDataset = FILENAME}
+
 /^#/ {
     next
 }
@@ -54,40 +59,47 @@ BEGIN {
 
 
 /./ {
-    x[++nx] = $1
+
+    x[currentDataset, ++nx[currentDataset]] = $1
     if(NF > 1)
-	y[++ny] = $2
+	y[currentDataset, ++ny[currentDataset]] = $2
+
 }
 
 
 
 END {
+    #print datasets
+    for(dsName in datasets){
+	print "Number in dataset" dsName " " nx[dsName]
 
-    if(ny && ny != nx){
-	printf("ERROR differnet number of x and y points: %s vs %s \n", nx, ny)
-	exit
-    }
+	if(ny[dsName] && ny[dsName] != nx[dsName]){
+	    printf("ERROR differnet number of x and y points: %s vs %s \n", nx[dsName], ny[dsName])
+	    printf("\t In dataset %s", dsName)
+	    exit
+	}
 
-    outputDataLines = ""
+	outputDataLines = ""
     
-    # Write the data
-    outputDataLines = outputDataLines sprintf("x = [")
-    for (i=1; i<=nx; i++){
-	outputDataLines = outputDataLines sprintf( x[i] ",\n")
+	# Write the data
+	outputDataLines = outputDataLines sprintf("x = [")
+	for (i=1; i<=nx[dsName]; i++){
+	    outputDataLines = outputDataLines sprintf( x[dsName, i] ",\n")
+	}
+	outputDataLines = outputDataLines sprintf("] \n")
+	
+	
+	# Write the data
+	outputDataLines = outputDataLines sprintf("y = [")
+	for (i=1; i<=ny[dsName]; i++){
+	    outputDataLines = outputDataLines sprintf( y[dsName, i] ",\n")
+	}
+	outputDataLines = outputDataLines sprintf("] \n")
+	
+	if(!plotName) plotName = "outputFig"
+	
+	print outputDataLines > (dsName "Data.py")
     }
-    outputDataLines = outputDataLines sprintf("] \n")
-
-    
-    # Write the data
-    outputDataLines = outputDataLines sprintf("y = [")
-    for (i=1; i<=ny; i++){
-	outputDataLines = outputDataLines sprintf( y[i] ",\n")
-    }
-    outputDataLines = outputDataLines sprintf("] \n")
-
-    if(!plotName) plotName = "outputFig"
-    
-    print outputDataLines > (plotName "Data.py")
     
     # Write the python
     outputLines = ""
@@ -98,27 +110,38 @@ END {
 	"import matplotlib.pyplot as plt \n"	
     outputLines = outputLines sprintf(pyLines)
 
+    #
+    #  Import data
+    #
+    for(dsName in datasets){
+	pyLines = "from %sData import x as x_%s \n"
+	outputLines = outputLines sprintf(pyLines, dsName, dsName)
 
-    pyLines = "from %sData import x, y \n"
-    outputLines = outputLines sprintf(pyLines, plotName)
-    
+	pyLines = "from %sData import y as y_%s \n"
+	outputLines = outputLines sprintf(pyLines, dsName, dsName)
+    }
     # Histogram
     pyLines = "fig, ax = plt.subplots(1) \n"	
     outputLines = outputLines sprintf(pyLines)
     
-    outputLines = outputLines sprintf("# ny is %s", ny)
+    #outputLines = outputLines sprintf("# ny is %s", ny)
     outputLines = outputLines sprintf("\n")
 
+    #
+    # Plot data
+    #
     # Do scatter or hist
-    if(ny){
-	pyLines = "plt.scatter(x, y) \n"
-	outputLines = outputLines sprintf(pyLines)
-    }else{
-	pyLines = "plt.hist(x ,histtype='%s',linewidth=%s,color='%s' %s) \n"	
-	if(nbins){
-	    binsText = sprintf(", bins=np.linspace(%s,%s,%s)", xRangeLow, xRangeHigh, nbins)
+    for(dsName in datasets){
+	if(ny[dsName]){
+	    pyLines = "plt.scatter(x_%s, y_%s, color='%s', label='%s') \n"
+	    outputLines = outputLines sprintf(pyLines, dsName, dsName, getColor(), dsName)
+	}else{
+	    pyLines = "plt.hist(x ,histtype='%s',linewidth=%s,color='%s' %s) \n"	
+	    if(nbins){
+		binsText = sprintf(", bins=np.linspace(%s,%s,%s)", xRangeLow, xRangeHigh, nbins)
+	    }
+	    outputLines = outputLines sprintf(pyLines, histtype, linewidth, color, binsText)
 	}
-	outputLines = outputLines sprintf(pyLines, histtype, linewidth, color, binsText)
     }
 
 
@@ -143,12 +166,20 @@ END {
 	"plt.ylabel('%s') \n" 
     outputLines = outputLines sprintf(pyLines,xlabel,ylabel)    
 
+    outputLines = outputLines sprintf("plt.legend() \n")
     outputLines = outputLines sprintf("plt.savefig('" plotName ".pdf') \n")
 
     print outputLines > (plotName ".py")    
     system("python " plotName ".py")    
 }
 
+function getColor(){
+    colors[0] = "b"
+    colors[1] = "r"
+    colors[2] = "k"
+
+    return colors[nCol++]
+}
 
 function stripFirstWord(){
     gsub($1, "", $0);        # Remove first word
